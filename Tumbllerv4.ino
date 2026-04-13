@@ -192,6 +192,8 @@ bool buttonWasPressed = false;
 
 void loop()
 {
+  updateYawControl();
+
   // Button logic: require 100ms press to start maneuvers
   bool buttonPressed = digitalRead(KEY_MODE) == LOW;
   if (buttonPressed && !buttonWasPressed) {

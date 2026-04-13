@@ -21,6 +21,7 @@ extern int encoder_left_pulse_num_speed;
 extern int encoder_right_pulse_num_speed;
 extern volatile long encoder_distance_left;
 extern volatile long encoder_distance_right;
+void captureYawHeading();
 
 // Maneuver types
 enum ManeuverType
@@ -37,7 +38,7 @@ enum ManeuverType
 struct Maneuver
 {
   ManeuverType type;
-  int value;  // Distance in encoder counts for forward/backward, degrees for turns, milliseconds for wait
+  int value;  // Distance in mm for forward/backward, milliseconds for turns and wait
 };
 
 
@@ -82,7 +83,6 @@ void startManeuverSequence()
   {
     maneuver_sequence_active = true;
     current_maneuver_index = 0;
-    delay(500); // Wait 100ms before starting movement
     motion_mode = START;
     function_mode = IDLE;
     // Reset encoder distance counters for clean distance measurement
@@ -143,6 +143,8 @@ void executeManeuver()
     {
       motion_mode = FORWARD;
       setting_car_speed = 100; // Increased speed
+      setting_turn_speed = 0;
+      captureYawHeading();
       maneuver_initial_encoder_count = (encoder_distance_left + encoder_distance_right) / 2;
       rgb.flashBlueColorFront();
       Serial.print("FWRD START baseline:");
@@ -182,6 +184,8 @@ void executeManeuver()
     {
       motion_mode = BACKWARD;
       setting_car_speed = -100; // Increased speed
+      setting_turn_speed = 0;
+      captureYawHeading();
       maneuver_initial_encoder_count = (encoder_distance_left + encoder_distance_right) / 2;
       rgb.flashBlueColorback();
       Serial.print("BACKWARD target:");

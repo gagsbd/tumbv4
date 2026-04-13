@@ -58,6 +58,16 @@ float kalmanfilter_angle;
 char balance_angle_min = -22;
 char balance_angle_max = 22;
 
+float yaw_angle_deg = 0.0f;
+float yaw_target_deg = 0.0f;
+float yaw_rate_offset = 0.0f;
+int yaw_turn_correction = 0;
+unsigned long yaw_last_update_us = 0;
+
+#define GYRO_Z_LSB_PER_DPS 131.0f
+#define YAW_HOLD_KP 3.0f
+#define YAW_HOLD_MAX_CORRECTION 30
+
 void carStop()
 {
   digitalWrite(AIN1, HIGH);
@@ -83,6 +93,65 @@ void carBack(unsigned char speed)
   analogWrite(PWMB_RIGHT, speed);
 }
 
+void calibrateYawSensor()
+{
+  long gz_sum = 0;
+  const int sample_count = 200;
+
+  for (int sample_index = 0; sample_index < sample_count; sample_index++)
+  {
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    gz_sum += gz;
+    delay(2);
+  }
+
+  yaw_rate_offset = (float)gz_sum / sample_count;
+  yaw_angle_deg = 0.0f;
+  yaw_target_deg = 0.0f;
+  yaw_turn_correction = 0;
+  yaw_last_update_us = micros();
+}
+
+void captureYawHeading()
+{
+  yaw_target_deg = yaw_angle_deg;
+  yaw_turn_correction = 0;
+}
+
+void updateYawControl()
+{
+  unsigned long current_time_us = micros();
+
+  if (yaw_last_update_us == 0)
+  {
+    yaw_last_update_us = current_time_us;
+    return;
+  }
+
+  float delta_time = (current_time_us - yaw_last_update_us) / 1000000.0f;
+  yaw_last_update_us = current_time_us;
+
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+  float yaw_rate_dps = ((float)gz - yaw_rate_offset) / GYRO_Z_LSB_PER_DPS;
+  if (yaw_rate_dps > -0.4f && yaw_rate_dps < 0.4f)
+  {
+    yaw_rate_dps = 0.0f;
+  }
+
+  yaw_angle_deg += yaw_rate_dps * delta_time;
+
+  if (motion_mode == FORWARD || motion_mode == BACKWARD)
+  {
+    float yaw_error = yaw_target_deg - yaw_angle_deg;
+    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION);
+  }
+  else
+  {
+    yaw_turn_correction = 0;
+  }
+}
+
 void balanceCar()
 {
   sei();
@@ -98,10 +167,11 @@ void balanceCar()
   
   int left_speed = setting_car_speed;
   int right_speed = setting_car_speed;
+  int turn_command = setting_turn_speed + yaw_turn_correction;
   
   // Apply turn speed
-  left_speed -= setting_turn_speed;   // Left motor reduced for right turn
-  right_speed += setting_turn_speed;  // Right motor increased for right turn
+  left_speed -= turn_command;   // Left motor reduced for right turn
+  right_speed += turn_command;  // Right motor increased for right turn
   
   // Constrain to PWM limits
   left_speed = constrain(left_speed, -255, 255);
@@ -151,9 +221,9 @@ void carInitialize()
   pinMode(STBY_PIN, OUTPUT);
   carStop();
   
-  // DISABLED: Balance features not needed (3-wheeled vehicle)
-  // Wire.begin();
-  // mpu.initialize();
+  Wire.begin();
+  mpu.initialize();
+  calibrateYawSensor();
   
   enableInterrupt(ENCODER_LEFT_A_PIN | PINCHANGEINTERRUPT, encoderCountLeftA, CHANGE);
   enableInterrupt(ENCODER_RIGHT_A_PIN, encoderCountRightA, CHANGE);
