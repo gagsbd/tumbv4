@@ -22,6 +22,7 @@ extern int encoder_right_pulse_num_speed;
 extern volatile long encoder_distance_left;
 extern volatile long encoder_distance_right;
 void captureYawHeading();
+float getYawDeltaFromHeading();
 
 // Maneuver types
 enum ManeuverType
@@ -38,7 +39,7 @@ enum ManeuverType
 struct Maneuver
 {
   ManeuverType type;
-  int value;  // Distance in mm for forward/backward, milliseconds for turns and wait
+  int value;  // Distance in mm for forward/backward, degrees for turns, milliseconds for wait
 };
 
 
@@ -56,6 +57,10 @@ unsigned long maneuver_start_time = 0;
 int maneuver_target_encoder_count = 0;
 int maneuver_initial_encoder_count = 0;
 unsigned long maneuver_debug_print_time = 0;
+
+#define TURN_SPEED_FAST 50
+#define TURN_SPEED_SLOW 25
+#define TURN_SLOWDOWN_DEGREES 15
 
 // Function to add a maneuver to the sequence
 void addManeuver(ManeuverType type, int value)
@@ -211,15 +216,30 @@ void executeManeuver()
     if (motion_mode != TURNLEFT)
     {
       motion_mode = TURNLEFT;
-      setting_turn_speed = 50;
-      maneuver_start_time = millis();
+      setting_car_speed = 0;
+      captureYawHeading();
+      setting_turn_speed = TURN_SPEED_FAST;
       rgb.flashBlueColorLeft();
     }
-    if (millis() - maneuver_start_time >= current.value)
     {
-      motion_mode = STANDBY;
-      setting_turn_speed = 0;
-      current_maneuver_index++;
+      float turn_degrees = fabs(getYawDeltaFromHeading());
+      float remaining_degrees = current.value - turn_degrees;
+
+      if (remaining_degrees <= TURN_SLOWDOWN_DEGREES)
+      {
+        setting_turn_speed = TURN_SPEED_SLOW;
+      }
+      else
+      {
+        setting_turn_speed = TURN_SPEED_FAST;
+      }
+
+      if (turn_degrees >= current.value)
+      {
+        motion_mode = STANDBY;
+        setting_turn_speed = 0;
+        current_maneuver_index++;
+      }
     }
     break;
 
@@ -227,15 +247,30 @@ void executeManeuver()
     if (motion_mode != TURNRIGHT)
     {
       motion_mode = TURNRIGHT;
-      setting_turn_speed = -50;
-      maneuver_start_time = millis();
+      setting_car_speed = 0;
+      captureYawHeading();
+      setting_turn_speed = -TURN_SPEED_FAST;
       rgb.flashBlueColorRight();
     }
-    if (millis() - maneuver_start_time >= current.value)
     {
-      motion_mode = STANDBY;
-      setting_turn_speed = 0;
-      current_maneuver_index++;
+      float turn_degrees = fabs(getYawDeltaFromHeading());
+      float remaining_degrees = current.value - turn_degrees;
+
+      if (remaining_degrees <= TURN_SLOWDOWN_DEGREES)
+      {
+        setting_turn_speed = -TURN_SPEED_SLOW;
+      }
+      else
+      {
+        setting_turn_speed = -TURN_SPEED_FAST;
+      }
+
+      if (turn_degrees >= current.value)
+      {
+        motion_mode = STANDBY;
+        setting_turn_speed = 0;
+        current_maneuver_index++;
+      }
     }
     break;
 

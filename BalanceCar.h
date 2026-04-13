@@ -14,6 +14,8 @@
 #include "MPU6050.h"
 #include "Wire.h"
 
+#define ENABLE_BALANCE_TEST 0
+
 // Forward declarations for variables from other headers
 extern char key_flag;
 
@@ -118,8 +120,16 @@ void captureYawHeading()
   yaw_turn_correction = 0;
 }
 
+float getYawDeltaFromHeading()
+{
+  return yaw_angle_deg - yaw_target_deg;
+}
+
 void updateYawControl()
 {
+#if ENABLE_BALANCE_TEST
+  return;
+#else
   unsigned long current_time_us = micros();
 
   if (yaw_last_update_us == 0)
@@ -150,34 +160,131 @@ void updateYawControl()
   {
     yaw_turn_correction = 0;
   }
+#endif
 }
 
 void balanceCar()
 {
   sei();
-  
-  // Track encoder counts for distance measurement
+
+#if ENABLE_BALANCE_TEST
+  encoder_left_pulse_num_speed += pwm_left < 0 ? -encoder_count_left_a : encoder_count_left_a;
+  encoder_right_pulse_num_speed += pwm_right < 0 ? -encoder_count_right_a : encoder_count_right_a;
+
+  encoder_distance_left += encoder_count_left_a;
+  encoder_distance_right += encoder_count_right_a;
+
+  encoder_count_left_a = 0;
+  encoder_count_right_a = 0;
+
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  kalmanfilter.Angle(ax, ay, az, gx, gy, gz, dt, Q_angle, Q_gyro, R_angle, C_0, K1);
+  kalmanfilter_angle = kalmanfilter.angle;
+
+  float yaw_rate_dps = ((float)gz - yaw_rate_offset) / GYRO_Z_LSB_PER_DPS;
+  if (yaw_rate_dps > -0.4f && yaw_rate_dps < 0.4f)
+  {
+    yaw_rate_dps = 0.0f;
+  }
+  yaw_angle_deg += yaw_rate_dps * dt;
+
+  if (motion_mode == FORWARD || motion_mode == BACKWARD)
+  {
+    float yaw_error = yaw_target_deg - yaw_angle_deg;
+    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION);
+  }
+  else
+  {
+    yaw_turn_correction = 0;
+  }
+
+  double balance_control_output = kp_balance * (kalmanfilter_angle - angle_zero) + kd_balance * (kalmanfilter.Gyro_x - angular_velocity_zero);
+
+  speed_control_period_count++;
+  if (speed_control_period_count >= 8)
+  {
+    speed_control_period_count = 0;
+    double car_speed = (encoder_left_pulse_num_speed + encoder_right_pulse_num_speed) * 0.5;
+    encoder_left_pulse_num_speed = 0;
+    encoder_right_pulse_num_speed = 0;
+    speed_filter = speed_filter_old * 0.7 + car_speed * 0.3;
+    speed_filter_old = speed_filter;
+    car_speed_integeral += speed_filter;
+    car_speed_integeral += -setting_car_speed;
+    car_speed_integeral = constrain(car_speed_integeral, -3000, 3000);
+    speed_control_output = -kp_speed * speed_filter - ki_speed * car_speed_integeral;
+    rotation_control_output = setting_turn_speed + yaw_turn_correction + kd_turn * kalmanfilter.Gyro_z;
+  }
+
+  pwm_left = balance_control_output - speed_control_output - rotation_control_output;
+  pwm_right = balance_control_output - speed_control_output + rotation_control_output;
+
+  pwm_left = constrain(pwm_left, -255, 255);
+  pwm_right = constrain(pwm_right, -255, 255);
+
+  if (motion_mode != START && motion_mode != STOP && (kalmanfilter_angle < balance_angle_min || balance_angle_max < kalmanfilter_angle))
+  {
+    motion_mode = STOP;
+    carStop();
+  }
+
+  if (motion_mode == STOP && key_flag != '4')
+  {
+    car_speed_integeral = 0;
+    setting_car_speed = 0;
+    yaw_turn_correction = 0;
+    pwm_left = 0;
+    pwm_right = 0;
+    carStop();
+  }
+  else if (motion_mode == STOP)
+  {
+    car_speed_integeral = 0;
+    setting_car_speed = 0;
+    yaw_turn_correction = 0;
+    pwm_left = 0;
+    pwm_right = 0;
+  }
+  else
+  {
+    if (pwm_left < 0)
+    {
+      digitalWrite(AIN1, 1);
+      analogWrite(PWMA_LEFT, -pwm_left);
+    }
+    else
+    {
+      digitalWrite(AIN1, 0);
+      analogWrite(PWMA_LEFT, pwm_left);
+    }
+
+    if (pwm_right < 0)
+    {
+      digitalWrite(BIN1, 1);
+      analogWrite(PWMB_RIGHT, -pwm_right);
+    }
+    else
+    {
+      digitalWrite(BIN1, 0);
+      analogWrite(PWMB_RIGHT, pwm_right);
+    }
+  }
+#else
   encoder_distance_left += encoder_count_left_a;
   encoder_distance_right += encoder_count_right_a;
   encoder_count_left_a = 0;
   encoder_count_right_a = 0;
-  
-  // SIMPLIFIED: Direct motor control based on motion_mode and speed settings
-  // No balance calculations (3-wheeled vehicle doesn't need balance)
-  
+
   int left_speed = setting_car_speed;
   int right_speed = setting_car_speed;
   int turn_command = setting_turn_speed + yaw_turn_correction;
-  
-  // Apply turn speed
-  left_speed -= turn_command;   // Left motor reduced for right turn
-  right_speed += turn_command;  // Right motor increased for right turn
-  
-  // Constrain to PWM limits
+
+  left_speed -= turn_command;
+  right_speed += turn_command;
+
   left_speed = constrain(left_speed, -255, 255);
   right_speed = constrain(right_speed, -255, 255);
-  
-  // Apply left motor
+
   if (left_speed < 0)
   {
     digitalWrite(AIN1, 1);
@@ -188,8 +295,7 @@ void balanceCar()
     digitalWrite(AIN1, 0);
     analogWrite(PWMA_LEFT, left_speed);
   }
-  
-  // Apply right motor
+
   if (right_speed < 0)
   {
     digitalWrite(BIN1, 1);
@@ -200,6 +306,7 @@ void balanceCar()
     digitalWrite(BIN1, 0);
     analogWrite(PWMB_RIGHT, right_speed);
   }
+#endif
 }
 
 void encoderCountRightA()
