@@ -21,10 +21,12 @@ void initManeuvers()
   // Add your maneuvers:
   // For FORWARD/BACKWARD: value = distance in mm
   // For TURN: value = angle in degrees
-  addManeuver(MANEUVER_FORWARD, 500);       // Move forward 500 mm
+  addManeuver(MANEUVER_FORWARD, 1000);       // Move forward 500 mm
   addManeuver(MANEUVER_TURN_LEFT, 90);      // Turn left 90 degrees using MPU yaw
-  //addManeuver(MANEUVER_FORWARD, 500);       // Move forward 500 encoder counts
-  //addManeuver(MANEUVER_TURN_LEFT, 500);    // Turn right for 500ms
+  addManeuver(MANEUVER_FORWARD, 500);       // Move forward 500 encoder counts
+  addManeuver(MANEUVER_TURN_LEFT, 90);    // Turn right for 500ms
+  addManeuver(MANEUVER_FORWARD, 1000); 
+  addManeuver(MANEUVER_TURN_LEFT, 90); 
   
   Serial.print("Maneuvers: ");
   Serial.println(maneuver_count);

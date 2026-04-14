@@ -20,6 +20,7 @@
 
 // External variable from Maneuver.h
 extern boolean maneuver_sequence_active;
+extern boolean maneuver_start_pending;
 
 unsigned long start_prev_time = 0;
 boolean carInitialize_en = true;
@@ -183,30 +184,54 @@ void setup()
   initManeuvers();            // Load maneuver sequence
   
   Serial.println("Ready - Press button to start maneuvers");
+  rgb.brightGreenColor();
   start_prev_time = millis();
 }
 unsigned long print_time = millis();
 
-unsigned long buttonPressStart = 0;
+unsigned long buttonPressOnTime = 0;
+unsigned long buttonReleaseTime = 0;
 bool buttonWasPressed = false;
 
 void loop()
 {
   updateYawControl();
 
-  // Button logic: require 100ms press to start maneuvers
+  // Match the reference start flow: detect a valid press, then wait for release before motion starts.
   bool buttonPressed = digitalRead(KEY_MODE) == LOW;
-  if (buttonPressed && !buttonWasPressed) {
-    buttonPressStart = millis();
+  if (buttonPressed && !buttonWasPressed)
+  {
+    buttonPressOnTime = millis();
+    buttonReleaseTime = 0;
     buttonWasPressed = true;
   }
-  if (!buttonPressed && buttonWasPressed) {
+  else if (!buttonPressed && buttonWasPressed)
+  {
+     rgb.flashGreenColor();
+    buttonReleaseTime = millis();
+    buttonPressOnTime = 0;
     buttonWasPressed = false;
-    buttonPressStart = 0;
   }
-  if (buttonPressed && !maneuver_sequence_active && buttonPressStart && (millis() - buttonPressStart > 100)) {
-    startManeuverSequence();
-    buttonPressStart = 0;
+
+  if (!maneuver_sequence_active && !maneuver_start_pending && buttonPressed && buttonPressOnTime && (millis() - buttonPressOnTime > 100))
+  {
+    requestManeuverStart();
+  }
+
+  if (maneuver_start_pending)
+  {
+   
+    if (!buttonPressed && buttonReleaseTime && (millis() - buttonReleaseTime > 100))
+    {
+      buttonReleaseTime = 0;
+      rgb.lightOff();
+      startManeuverSequence();
+    }
+  }
+
+  if (buttonPressed && maneuver_sequence_active && buttonPressOnTime && (millis() - buttonPressOnTime > 100))
+  {
+    buttonPressOnTime = 0;
   }
 
   if (maneuver_sequence_active)

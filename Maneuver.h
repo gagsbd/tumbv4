@@ -53,6 +53,7 @@ Maneuver maneuvers[MAX_MANEUVERS];
 int maneuver_count = 0;
 int current_maneuver_index = 0;
 boolean maneuver_sequence_active = false;
+boolean maneuver_start_pending = false;
 unsigned long maneuver_start_time = 0;
 int maneuver_target_encoder_count = 0;
 int maneuver_initial_encoder_count = 0;
@@ -79,6 +80,19 @@ void clearManeuvers()
   maneuver_count = 0;
   current_maneuver_index = 0;
   maneuver_sequence_active = false;
+  maneuver_start_pending = false;
+}
+
+void requestManeuverStart()
+{
+  if (maneuver_count > 0 && !maneuver_sequence_active)
+  {
+    maneuver_start_pending = true;
+    motion_mode = START;
+    function_mode = IDLE;
+    setting_car_speed = 0;
+    setting_turn_speed = 0;
+  }
 }
 
 // Function to start executing the maneuver sequence
@@ -86,6 +100,7 @@ void startManeuverSequence()
 {
   if (maneuver_count > 0 && !maneuver_sequence_active)
   {
+    maneuver_start_pending = false;
     maneuver_sequence_active = true;
     current_maneuver_index = 0;
     motion_mode = START;
@@ -100,6 +115,7 @@ void startManeuverSequence()
 // Function to stop the maneuver sequence
 void stopManeuverSequence()
 {
+  maneuver_start_pending = false;
   maneuver_sequence_active = false;
   motion_mode = STOP;
   setting_car_speed = 0;
@@ -151,7 +167,8 @@ void executeManeuver()
       setting_turn_speed = 0;
       captureYawHeading();
       maneuver_initial_encoder_count = (encoder_distance_left + encoder_distance_right) / 2;
-      rgb.flashBlueColorFront();
+      //rgb.flashBlueColorFront();
+      rgb.flashBrightPurpleColor();
       Serial.print("FWRD START baseline:");
       Serial.println(maneuver_initial_encoder_count);
     }

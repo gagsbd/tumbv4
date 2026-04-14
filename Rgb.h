@@ -406,6 +406,11 @@ public:
     setColorNew(0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255);
     setColorOld(0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255);
   }
+  void flashBrightPurpleColor() //亮蓝灯
+  {
+    setColorNew(128, 0, 128, 128, 0, 128, 128, 0, 128, 128, 0, 128);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
   void flashBlueColorFront() //前面闪蓝灯
   {
     setColorNew(0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 255);
@@ -455,6 +460,11 @@ public:
   {
     setColorNew(0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0);
     setColorOld(0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0);
+  }
+  void flashGreenColor() //闪绿灯
+  {
+    setColorNew(0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
   void flashGreenColorFront() //前面闪绿灯
   {
