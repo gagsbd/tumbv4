@@ -184,7 +184,7 @@ void setup()
   initManeuvers();            // Load maneuver sequence
   
   Serial.println("Ready - Press button to start maneuvers");
-  rgb.brightGreenColor();
+  rgb.brightPinkColor();
   start_prev_time = millis();
 }
 unsigned long print_time = millis();

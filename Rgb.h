@@ -408,7 +408,17 @@ public:
   }
   void flashBrightPurpleColor() //亮蓝灯
   {
-    setColorNew(128, 0, 128, 128, 0, 128, 128, 0, 128, 128, 0, 128);
+    setColorNew(200, 0, 200, 200, 0, 200, 200, 0, 200, 200, 0, 200);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+  void brightPinkColor() //亮蓝灯
+  {
+    setColorNew(255, 105, 180, 255, 105, 180, 255, 105, 180, 255, 105, 180);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+   void flashBrightPurpleColorBack() //亮蓝灯
+  {
+    setColorNew(200, 0, 200, 200, 0, 200, 0, 0, 0, 0, 0, 0);
     setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
   void flashBlueColorFront() //前面闪蓝灯
@@ -486,7 +496,16 @@ public:
     setColorNew(0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0);
     setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
-
+void flashGoldColorLeft() //左侧闪绿灯
+  {
+    setColorNew(0, 0, 0, 255, 215, 0, 255, 215, 0, 0, 0, 0);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+  void flashGoldColorRight() //右侧闪绿灯
+  {
+    setColorNew(255, 215, 0, 0, 0, 0, 0, 0, 0, 255, 215, 0);
+    setColorOld(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
 private:
   unsigned char delay_flag = 0;
   unsigned long previous_millis = 0;
