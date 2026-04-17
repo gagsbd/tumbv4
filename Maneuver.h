@@ -46,7 +46,7 @@ struct Maneuver
 // Encoder scale: how many counts per mm (calibrated)
 #define ENCODER_SCALE 3.29
 // Maximum number of maneuvers
-#define MAX_MANEUVERS 100
+#define MAX_MANEUVERS 20
 
 // Global variables for maneuver system
 Maneuver maneuvers[MAX_MANEUVERS];
@@ -68,7 +68,23 @@ unsigned long maneuver_turn_settle_start = 0;
 #define TURN_SETTLE_TOLERANCE_DEGREES 4.0f
 #define TURN_SPEED_KP 1.2f
 #define TURN_SETTLE_MS 120
-#define TURN_ANGLE_SCALE 0.95f
+#define TURN_ANGLE_SCALE 0.98f
+
+// Encoder-based turn calibration (derived from physical dimensions):
+// Wheel diameter = 68mm, wheelbase = 170mm, ENCODER_SCALE = 3.29 counts/mm
+// Pivot turn arc per degree per wheel = PI * 170 / 360 = 1.484 mm
+// Counts per degree = 1.484 * 3.29 = 4.88, adjusted for observed overshoot
+#define ENCODER_TURN_SCALE_PER_DEGREE 5.02f
+// Settle threshold ~1 degree worth of counts (1 * 4.88 ≈ 5)
+#define ENCODER_TURN_SETTLE_COUNTS 5
+// KP equivalent to yaw TURN_SPEED_KP (1.2) scaled to encoder counts: 1.2 / 4.88 ≈ 0.25
+#define ENCODER_TURN_SPEED_KP 0.25f
+
+// Flag: false = use yaw/gyro for turns, true = use encoder counts for turns
+boolean maneuver_use_encoder_turns = false;
+
+// Speed for forward/backward maneuvers (0-255)
+int maneuver_drive_speed = 40;
 
 int getTurnSpeedCommand(float remaining_degrees)
 {
@@ -135,7 +151,7 @@ void startManeuverSequence()
     // Reset encoder distance counters for clean distance measurement
     encoder_distance_left = 0;
     encoder_distance_right = 0;
-    Serial.println("SEQ START");
+    Serial.println(F("SEQ START"));
   }
 }
 
@@ -165,7 +181,7 @@ void executeManeuver()
       setting_car_speed = 0;
       setting_turn_speed = 0;
       rgb.lightOff();
-      Serial.println("DONE");
+      Serial.println(F("DONE"));
     }
     return;
   }
@@ -179,7 +195,7 @@ void executeManeuver()
       static int last_mode = -1;
       if (motion_mode != last_mode)
       {
-        Serial.print("MODE:");
+        Serial.print(F("MODE:"));
         Serial.println(motion_mode);
         last_mode = motion_mode;
       }
@@ -188,14 +204,16 @@ void executeManeuver()
     if (motion_mode != FORWARD)
     {
       motion_mode = FORWARD;
-      setting_car_speed = 100; // Increased speed
+      setting_car_speed = maneuver_drive_speed;
       setting_turn_speed = 0;
       captureYawHeading();
       maneuver_initial_encoder_count = ((encoder_distance_left + encoder_distance_right)-245) / 2;
       //rgb.flashBlueColorFront();
       rgb.flashBrightPurpleColor();
-      Serial.print("FWRD START baseline:");
+      Serial.print(F("FWRD START baseline:"));
       Serial.println(maneuver_initial_encoder_count);
+      Serial.print(F("Start:"));
+      Serial.print(millis());
     }
     else
     {
@@ -207,9 +225,9 @@ void executeManeuver()
       if (millis() - last_enc_print > 200)
       {
         last_enc_print = millis();
-        Serial.print("traveled:");
+        Serial.print(F("traveled:"));
         Serial.print(traveled);
-        Serial.print("/");
+        Serial.print(F("/"));
         Serial.println(current.value);
       }
       
@@ -219,8 +237,11 @@ void executeManeuver()
         motion_mode = STANDBY;
         setting_car_speed = 0;
         current_maneuver_index++;
-        Serial.print("FWRD DONE NEXT:");
+        Serial.print(F("FWRD DONE NEXT:"));
         Serial.println(current_maneuver_index);
+
+        Serial.print(F("End:"));
+      Serial.print(millis());
       }
     }
     break;
@@ -229,12 +250,12 @@ void executeManeuver()
     if (motion_mode != BACKWARD)
     {
       motion_mode = BACKWARD;
-      setting_car_speed = -100; // Increased speed
+      setting_car_speed = -maneuver_drive_speed;
       setting_turn_speed = 0;
       captureYawHeading();
       maneuver_initial_encoder_count = ((encoder_distance_left + encoder_distance_right)-245) / 2;
       rgb.flashBrightPurpleColorBack();
-      Serial.print("BACK START baseline:");
+      Serial.print(F("BACK START baseline:"));
       Serial.println(maneuver_initial_encoder_count);
     }
     else
@@ -245,9 +266,9 @@ void executeManeuver()
       if (millis() - last_enc_print > 200)
       {
         last_enc_print = millis();
-        Serial.print("traveled:");
+        Serial.print(F("traveled:"));
         Serial.print(traveled);
-        Serial.print("/");
+        Serial.print(F("/"));
         Serial.println(current.value);
       }
       
@@ -257,126 +278,230 @@ void executeManeuver()
         motion_mode = STANDBY;
         setting_car_speed = 0;
         current_maneuver_index++;
-        Serial.print("BACK DONE NEXT:");
+        Serial.print(F("BACK DONE NEXT:"));
         Serial.println(current_maneuver_index);
       }
     }
     break;
 
   case MANEUVER_TURN_LEFT:
-    if (motion_mode != TURNLEFT && !maneuver_turn_settling)
+    if (maneuver_use_encoder_turns)
     {
-      motion_mode = TURNLEFT;
-      setting_car_speed = 0;
-      captureYawHeading();
-      maneuver_turn_direction_sign = 0;
-      maneuver_turn_settling = false;
-      setting_turn_speed = TURN_SPEED_FAST;
-      rgb.flashGoldColorLeft();
-    }
-    {
-      float yaw_delta = getYawDeltaFromHeading();
-
-      if (maneuver_turn_direction_sign == 0 && fabs(yaw_delta) >= TURN_DIRECTION_DETECT_DEGREES)
-      {
-        maneuver_turn_direction_sign = yaw_delta > 0.0f ? 1 : -1;
-      }
-
-      float turn_degrees = maneuver_turn_direction_sign == 0 ? 0.0f : yaw_delta * maneuver_turn_direction_sign;
-      if (turn_degrees < 0.0f)
-      {
-        turn_degrees = 0.0f;
-      }
-
-      turn_degrees *= TURN_ANGLE_SCALE;
-
-      float remaining_degrees = current.value - turn_degrees;
-
-      if (maneuver_turn_direction_sign == 0)
-      {
-        setting_turn_speed = TURN_SPEED_FAST;
-      }
-      else if (maneuver_turn_settling || remaining_degrees <= TURN_SETTLE_TOLERANCE_DEGREES)
-      {
-        motion_mode = STANDBY;
-        setting_turn_speed = 0;
-
-        if (!maneuver_turn_settling)
-        {
-          maneuver_turn_settling = true;
-          maneuver_turn_settle_start = millis();
-        }
-        else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
-        {
-          maneuver_turn_direction_sign = 0;
-          maneuver_turn_settling = false;
-          current_maneuver_index++;
-        }
-      }
-      else
+      // --- Encoder-based left turn ---
+      if (motion_mode != TURNLEFT && !maneuver_turn_settling)
       {
         motion_mode = TURNLEFT;
         setting_car_speed = 0;
-        setting_turn_speed = getTurnSpeedCommand(remaining_degrees);
+        maneuver_turn_settling = false;
+        maneuver_initial_encoder_count = (encoder_distance_left + encoder_distance_right) / 2;
+        maneuver_target_encoder_count = (int)(current.value * ENCODER_TURN_SCALE_PER_DEGREE);
+        setting_turn_speed = TURN_SPEED_FAST;
+        rgb.flashGoldColorLeft();
+        Serial.print(F("ENC TLEFT START tgt:"));
+        Serial.println(maneuver_target_encoder_count);
+      }
+      {
+        int current_enc = (encoder_distance_left + encoder_distance_right) / 2;
+        int traveled = current_enc - maneuver_initial_encoder_count;
+        int remaining = maneuver_target_encoder_count - traveled;
+
+        if (maneuver_turn_settling || remaining <= ENCODER_TURN_SETTLE_COUNTS)
+        {
+          motion_mode = STANDBY;
+          setting_turn_speed = 0;
+
+          if (!maneuver_turn_settling)
+          {
+            maneuver_turn_settling = true;
+            maneuver_turn_settle_start = millis();
+          }
+          else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
+          {
+            maneuver_turn_settling = false;
+            current_maneuver_index++;
+            Serial.println(F("ENC TLEFT DONE"));
+          }
+        }
+        else
+        {
+          motion_mode = TURNLEFT;
+          setting_car_speed = 0;
+          int turn_speed = (int)(remaining * ENCODER_TURN_SPEED_KP);
+          if (turn_speed < TURN_SPEED_SLOW) turn_speed = TURN_SPEED_SLOW;
+          if (turn_speed > TURN_SPEED_FAST) turn_speed = TURN_SPEED_FAST;
+          setting_turn_speed = turn_speed;
+        }
+      }
+    }
+    else
+    {
+      // --- Yaw/gyro-based left turn ---
+      if (motion_mode != TURNLEFT && !maneuver_turn_settling)
+      {
+        motion_mode = TURNLEFT;
+        setting_car_speed = 0;
+        captureYawHeading();
+        maneuver_turn_direction_sign = 0;
+        maneuver_turn_settling = false;
+        setting_turn_speed = TURN_SPEED_FAST;
+        rgb.flashGoldColorLeft();
+      }
+      {
+        float yaw_delta = getYawDeltaFromHeading();
+
+        if (maneuver_turn_direction_sign == 0 && fabs(yaw_delta) >= TURN_DIRECTION_DETECT_DEGREES)
+        {
+          maneuver_turn_direction_sign = yaw_delta > 0.0f ? 1 : -1;
+        }
+
+        float turn_degrees = maneuver_turn_direction_sign == 0 ? 0.0f : yaw_delta * maneuver_turn_direction_sign;
+        if (turn_degrees < 0.0f)
+        {
+          turn_degrees = 0.0f;
+        }
+
+        turn_degrees *= TURN_ANGLE_SCALE;
+
+        float remaining_degrees = current.value - turn_degrees;
+
+        if (maneuver_turn_direction_sign == 0)
+        {
+          setting_turn_speed = TURN_SPEED_FAST;
+        }
+        else if (maneuver_turn_settling || remaining_degrees <= TURN_SETTLE_TOLERANCE_DEGREES)
+        {
+          motion_mode = STANDBY;
+          setting_turn_speed = 0;
+
+          if (!maneuver_turn_settling)
+          {
+            maneuver_turn_settling = true;
+            maneuver_turn_settle_start = millis();
+          }
+          else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
+          {
+            maneuver_turn_direction_sign = 0;
+            maneuver_turn_settling = false;
+            current_maneuver_index++;
+          }
+        }
+        else
+        {
+          motion_mode = TURNLEFT;
+          setting_car_speed = 0;
+          setting_turn_speed = getTurnSpeedCommand(remaining_degrees);
+        }
       }
     }
     break;
 
   case MANEUVER_TURN_RIGHT:
-    if (motion_mode != TURNRIGHT && !maneuver_turn_settling)
+    if (maneuver_use_encoder_turns)
     {
-      motion_mode = TURNRIGHT;
-      setting_car_speed = 0;
-      captureYawHeading();
-      maneuver_turn_direction_sign = 0;
-      maneuver_turn_settling = false;
-      setting_turn_speed = -TURN_SPEED_FAST;
-      rgb.flashGoldColorRight();
-    }
-    {
-      float yaw_delta = getYawDeltaFromHeading();
-
-      if (maneuver_turn_direction_sign == 0 && fabs(yaw_delta) >= TURN_DIRECTION_DETECT_DEGREES)
-      {
-        maneuver_turn_direction_sign = yaw_delta > 0.0f ? 1 : -1;
-      }
-
-      float turn_degrees = maneuver_turn_direction_sign == 0 ? 0.0f : yaw_delta * maneuver_turn_direction_sign;
-      if (turn_degrees < 0.0f)
-      {
-        turn_degrees = 0.0f;
-      }
-
-      turn_degrees *= TURN_ANGLE_SCALE;
-
-      float remaining_degrees = current.value - turn_degrees;
-
-      if (maneuver_turn_direction_sign == 0)
-      {
-        setting_turn_speed = -TURN_SPEED_FAST;
-      }
-      else if (maneuver_turn_settling || remaining_degrees <= TURN_SETTLE_TOLERANCE_DEGREES)
-      {
-        motion_mode = STANDBY;
-        setting_turn_speed = 0;
-
-        if (!maneuver_turn_settling)
-        {
-          maneuver_turn_settling = true;
-          maneuver_turn_settle_start = millis();
-        }
-        else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
-        {
-          maneuver_turn_direction_sign = 0;
-          maneuver_turn_settling = false;
-          current_maneuver_index++;
-        }
-      }
-      else
+      // --- Encoder-based right turn ---
+      if (motion_mode != TURNRIGHT && !maneuver_turn_settling)
       {
         motion_mode = TURNRIGHT;
         setting_car_speed = 0;
-        setting_turn_speed = -getTurnSpeedCommand(remaining_degrees);
+        maneuver_turn_settling = false;
+        maneuver_initial_encoder_count = (encoder_distance_left + encoder_distance_right) / 2;
+        maneuver_target_encoder_count = (int)(current.value * ENCODER_TURN_SCALE_PER_DEGREE);
+        setting_turn_speed = -TURN_SPEED_FAST;
+        rgb.flashGoldColorRight();
+        Serial.print(F("ENC TRIGHT START tgt:"));
+        Serial.println(maneuver_target_encoder_count);
+      }
+      {
+        int current_enc = (encoder_distance_left + encoder_distance_right) / 2;
+        int traveled = current_enc - maneuver_initial_encoder_count;
+        int remaining = maneuver_target_encoder_count - traveled;
+
+        if (maneuver_turn_settling || remaining <= ENCODER_TURN_SETTLE_COUNTS)
+        {
+          motion_mode = STANDBY;
+          setting_turn_speed = 0;
+
+          if (!maneuver_turn_settling)
+          {
+            maneuver_turn_settling = true;
+            maneuver_turn_settle_start = millis();
+          }
+          else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
+          {
+            maneuver_turn_settling = false;
+            current_maneuver_index++;
+            Serial.println(F("ENC TRIGHT DONE"));
+          }
+        }
+        else
+        {
+          motion_mode = TURNRIGHT;
+          setting_car_speed = 0;
+          int turn_speed = (int)(remaining * ENCODER_TURN_SPEED_KP);
+          if (turn_speed < TURN_SPEED_SLOW) turn_speed = TURN_SPEED_SLOW;
+          if (turn_speed > TURN_SPEED_FAST) turn_speed = TURN_SPEED_FAST;
+          setting_turn_speed = -turn_speed;
+        }
+      }
+    }
+    else
+    {
+      // --- Yaw/gyro-based right turn ---
+      if (motion_mode != TURNRIGHT && !maneuver_turn_settling)
+      {
+        motion_mode = TURNRIGHT;
+        setting_car_speed = 0;
+        captureYawHeading();
+        maneuver_turn_direction_sign = 0;
+        maneuver_turn_settling = false;
+        setting_turn_speed = -TURN_SPEED_FAST;
+        rgb.flashGoldColorRight();
+      }
+      {
+        float yaw_delta = getYawDeltaFromHeading();
+
+        if (maneuver_turn_direction_sign == 0 && fabs(yaw_delta) >= TURN_DIRECTION_DETECT_DEGREES)
+        {
+          maneuver_turn_direction_sign = yaw_delta > 0.0f ? 1 : -1;
+        }
+
+        float turn_degrees = maneuver_turn_direction_sign == 0 ? 0.0f : yaw_delta * maneuver_turn_direction_sign;
+        if (turn_degrees < 0.0f)
+        {
+          turn_degrees = 0.0f;
+        }
+
+        turn_degrees *= TURN_ANGLE_SCALE;
+
+        float remaining_degrees = current.value - turn_degrees;
+
+        if (maneuver_turn_direction_sign == 0)
+        {
+          setting_turn_speed = -TURN_SPEED_FAST;
+        }
+        else if (maneuver_turn_settling || remaining_degrees <= TURN_SETTLE_TOLERANCE_DEGREES)
+        {
+          motion_mode = STANDBY;
+          setting_turn_speed = 0;
+
+          if (!maneuver_turn_settling)
+          {
+            maneuver_turn_settling = true;
+            maneuver_turn_settle_start = millis();
+          }
+          else if (millis() - maneuver_turn_settle_start >= TURN_SETTLE_MS)
+          {
+            maneuver_turn_direction_sign = 0;
+            maneuver_turn_settling = false;
+            current_maneuver_index++;
+          }
+        }
+        else
+        {
+          motion_mode = TURNRIGHT;
+          setting_car_speed = 0;
+          setting_turn_speed = -getTurnSpeedCommand(remaining_degrees);
+        }
       }
     }
     break;

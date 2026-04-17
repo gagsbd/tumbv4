@@ -67,8 +67,10 @@ int yaw_turn_correction = 0;
 unsigned long yaw_last_update_us = 0;
 
 #define GYRO_Z_LSB_PER_DPS 131.0f
-#define YAW_HOLD_KP 3.0f
+#define YAW_HOLD_KP 5.0f
 #define YAW_HOLD_MAX_CORRECTION 30
+// Straight-line trim: positive = correct rightward drift (steer left)
+#define YAW_STRAIGHT_TRIM 3
 
 void carStop()
 {
@@ -154,7 +156,7 @@ void updateYawControl()
   if (motion_mode == FORWARD || motion_mode == BACKWARD)
   {
     float yaw_error = yaw_target_deg - yaw_angle_deg;
-    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION);
+    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION) + YAW_STRAIGHT_TRIM;
   }
   else
   {
@@ -191,7 +193,7 @@ void balanceCar()
   if (motion_mode == FORWARD || motion_mode == BACKWARD)
   {
     float yaw_error = yaw_target_deg - yaw_angle_deg;
-    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION);
+    yaw_turn_correction = constrain((int)(yaw_error * YAW_HOLD_KP), -YAW_HOLD_MAX_CORRECTION, YAW_HOLD_MAX_CORRECTION) + YAW_STRAIGHT_TRIM;
   }
   else
   {

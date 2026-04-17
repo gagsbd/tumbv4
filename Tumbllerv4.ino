@@ -183,7 +183,7 @@ void setup()
   carInitialize();            // Initialize motors and encoders (NOT balance)
   initManeuvers();            // Load maneuver sequence
   
-  Serial.println("Ready - Press button to start maneuvers");
+  Serial.println(F("Ready - Press button to start maneuvers"));
   rgb.brightPinkColor();
   start_prev_time = millis();
 }
@@ -244,7 +244,7 @@ void loop()
   if (millis() - print_time > 2000)
   {
     print_time = millis();
-    Serial.print("Button ready - Maneuvers defined: ");
+    Serial.print(F("Button ready - Maneuvers defined: "));
     Serial.println(maneuver_count);
   }
 }
